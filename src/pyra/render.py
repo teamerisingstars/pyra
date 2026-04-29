@@ -45,7 +45,7 @@ def _render_node(
             registry[hid] = fn
             handlers[event_name] = hid
 
-        return {
+        result: dict[str, Any] = {
             "type": "element",
             "id": nid,
             "tag": node.tag,
@@ -53,6 +53,9 @@ def _render_node(
             "handlers": handlers,
             "children": children,
         }
+        if node.key is not None:
+            result["key"] = node.key
+        return result
 
     if isinstance(node, Component):
         raise TypeError(f"Component subclass {type(node).__name__} not renderable yet")
@@ -62,7 +65,7 @@ def _render_node(
 
 _SAFE_PROP_KEYS = {
     "style", "value", "placeholder", "type", "name", "checked", "disabled",
-    "href", "src", "alt", "title", "class", "id",
+    "href", "src", "alt", "title", "class", "id", "rel",
 }
 
 

@@ -19,6 +19,12 @@ from pyra.components import (
     VStack,
     HStack,
     Input,
+    Badge,
+    Card,
+    Image,
+    Heading,
+    Link,
+    Spinner,
 )
 from pyra.app import App, page
 
@@ -37,6 +43,12 @@ __all__ = [
     "VStack",
     "HStack",
     "Input",
+    "Badge",
+    "Card",
+    "Image",
+    "Heading",
+    "Link",
+    "Spinner",
     "App",
     "page",
     "__version__",
