@@ -77,3 +77,26 @@ def Input(
         props={"value": str(value), "placeholder": placeholder},
         handlers=handlers,
     )
+
+
+def Heading(content: Any, level: int = 1) -> Element:
+    clamped = max(1, min(6, level))
+    return Element(tag=f"h{clamped}", children=[str(content)])
+
+
+def Link(label: Any, href: str = "", external: bool = False) -> Element:
+    props: dict[str, Any] = {"href": href}
+    if external:
+        props["rel"] = "noopener noreferrer"
+    return Element(tag="a", props=props, children=[str(label)])
+
+
+def Spinner(size: str = "24px", color: str = "#888") -> Element:
+    # The pyra-spin @keyframes animation must live in global CSS (e.g. app.py's _INDEX_HTML).
+    # This component sets the class and border-based visual; the browser applies the keyframe.
+    style = (
+        f"width:{size};height:{size};"
+        f"border:3px solid #eee;border-top:3px solid {color};"
+        f"border-radius:50%;animation:pyra-spin 0.8s linear infinite;"
+    )
+    return Element(tag="div", props={"class": "pyra-spinner", "style": style})

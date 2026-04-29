@@ -62,7 +62,7 @@ def _render_node(
 
 _SAFE_PROP_KEYS = {
     "style", "value", "placeholder", "type", "name", "checked", "disabled",
-    "href", "src", "alt", "title", "class", "id",
+    "href", "src", "alt", "title", "class", "id", "rel",
 }
 
 
