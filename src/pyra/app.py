@@ -605,11 +605,9 @@ class App:
 def _accepts_arg(fn: Callable[..., Any]) -> bool:
     import inspect
     try:
-        sig = inspect.signature(fn)
-    except (TypeError, ValueError):
+        inspect.signature(fn).bind(None)
+        return True
+    except TypeError:
         return False
-    return any(
-        p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        and p.default is p.empty
-        for p in sig.parameters.values()
-    )
+    except (ValueError, Exception):
+        return False
