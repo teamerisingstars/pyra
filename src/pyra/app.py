@@ -472,12 +472,12 @@ class App:
 
         return False
 
-    def run(self, host: str = "127.0.0.1", port: int = 7340, reload: bool = False) -> None:
+    def run(self, host: str | None = None, port: int | None = None, reload: bool = False) -> None:
         """Start the Pyra application server.
 
         Args:
-            host: The host address to bind to.
-            port: The port to listen on.
+            host: The host address to bind to. Defaults to config.host (PYRA_HOST, "127.0.0.1").
+            port: The port to listen on. Defaults to config.port (PYRA_PORT, 7340).
             reload: Enable hot-reload via uvicorn's built-in reload mode.
                 When reload=True, the app variable must be importable from __main__.
                 Example usage::
@@ -486,6 +486,11 @@ class App:
                     if __name__ == "__main__":
                         app.run(reload=True)
         """
+        from pyra.config import config
+
+        config.check_production_secret()
+        _host = host if host is not None else config.host
+        _port = port if port is not None else config.port
         import uvicorn
         if reload:
             import sys
@@ -499,16 +504,16 @@ class App:
             if app_var:
                 uvicorn.run(
                     f"__main__:{app_var}._starlette",
-                    host=host,
-                    port=port,
+                    host=_host,
+                    port=_port,
                     reload=True,
                     log_level="info",
                 )
             else:
                 print("[pyra] reload=True requires app to be importable. Falling back to non-reload mode.")
-                uvicorn.run(self._starlette, host=host, port=port, log_level="info")
+                uvicorn.run(self._starlette, host=_host, port=_port, log_level="info")
         else:
-            uvicorn.run(self._starlette, host=host, port=port, log_level="info")
+            uvicorn.run(self._starlette, host=_host, port=_port, log_level="info")
 
 
 def _accepts_arg(fn: Callable[..., Any]) -> bool:

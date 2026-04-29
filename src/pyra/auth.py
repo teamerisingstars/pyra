@@ -13,6 +13,8 @@ from typing import Any, Callable
 _SESSION_CTX: ContextVar[str | None] = ContextVar("pyra_user_id", default=None)
 _AUTH_REDIRECT_SENTINEL = "__pyra_auth_redirect__"
 
+_UNSET = object()
+
 
 class AuthManager:
     """Manages magic-link tokens and signed session cookies.
@@ -27,13 +29,20 @@ class AuthManager:
 
     def __init__(
         self,
-        secret_key: str,
+        secret_key: str | object = _UNSET,
         token_ttl: int = 900,
         session_ttl: int = 86400,
         login_path: str = "/login",
         cookie_name: str = "pyra_session",
     ) -> None:
-        self._secret = secret_key.encode()
+        from pyra.config import config as _cfg
+
+        if secret_key is _UNSET:
+            _cfg.check_production_secret()
+            resolved_key = _cfg.secret_key
+        else:
+            resolved_key = str(secret_key)
+        self._secret = resolved_key.encode()
         self._token_ttl = token_ttl
         self._session_ttl = session_ttl
         self.login_path = login_path

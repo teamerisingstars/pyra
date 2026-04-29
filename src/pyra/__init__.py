@@ -32,6 +32,7 @@ from pyra.components import (
 from pyra.forms import validate, use_form
 from pyra.app import App, page
 from pyra.auth import AuthManager, get_current_user
+from pyra.config import config, Config
 
 __version__ = "0.0.2"
 
@@ -63,5 +64,7 @@ __all__ = [
     "page",
     "AuthManager",
     "get_current_user",
+    "config",
+    "Config",
     "__version__",
 ]
