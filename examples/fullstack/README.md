@@ -23,3 +23,13 @@ Open http://127.0.0.1:7340
 - Click **Mark done** to toggle a task's status (the Badge updates from "pending" to "done").
 - Click **Delete** to remove a task from the list.
 - Each task card is wrapped in a keyed `Element` so Pyra's reconciler moves/patches nodes correctly instead of rebuilding the whole list.
+
+## Deploy
+
+See [docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md) for full instructions covering Docker, Fly.io, Render, and reverse-proxy setups.
+
+Quick start with Docker:
+
+```bash
+docker build -t my-app . && docker run -p 7340:7340 -e PYRA_SECRET_KEY=... my-app
+```
