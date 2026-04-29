@@ -224,6 +224,25 @@ _RUNTIME_JS = r"""
 """
 
 
+_404_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>404 — Not Found</title>
+<style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;
+justify-content:center;min-height:100vh;margin:0;background:#f9fafb;}
+.box{text-align:center;padding:2rem;}h1{font-size:2rem;color:#111;}
+p{color:#6b7280;}a{color:#6366f1;}</style></head>
+<body><div class="box"><h1>404</h1><p>Page not found.</p>
+<a href="/">← Go home</a></div></body></html>"""
+
+_500_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>500 — Server Error</title>
+<style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;
+justify-content:center;min-height:100vh;margin:0;background:#f9fafb;}
+.box{text-align:center;padding:2rem;}h1{font-size:2rem;color:#111;}
+p{color:#6b7280;}a{color:#6366f1;}</style></head>
+<body><div class="box"><h1>500</h1><p>Something went wrong.</p>
+<a href="/">← Go home</a></div></body></html>"""
+
+
 def _render_ssr(renderer: Callable[[], Any]) -> str:
     """Render a page function to an HTML string for SSR. Never raises — caller handles exceptions."""
     from pyra.ssr import render_to_html
@@ -256,6 +275,7 @@ class _Connection:
 class App:
     def __init__(self) -> None:
         self._auth: Any = None
+        self._error_pages: dict[int, Callable[[], Any]] = {}
         self._starlette = Starlette(
             debug=True,
             routes=[
@@ -266,7 +286,58 @@ class App:
                 # (must come after more specific /__pyra__/* routes)
                 Route("/{path:path}", self._index, methods=["GET"]),
             ],
+            exception_handlers={500: self._handle_500},
         )
+
+    def mount_static(self, path: str = "/static", directory: str = "static") -> None:
+        """Serve static files from *directory* at URL *path*.
+
+        Example::
+
+            app = App()
+            app.mount_static("/static", directory="assets")
+            # Files in assets/ are now served at /static/filename.ext
+
+        Call before app.run(). The directory is resolved relative to the caller's CWD.
+        """
+        import os
+
+        from starlette.routing import Mount
+        from starlette.staticfiles import StaticFiles
+
+        abs_dir = os.path.abspath(directory)
+        if not os.path.isdir(abs_dir):
+            os.makedirs(abs_dir, exist_ok=True)
+        # Insert before the catch-all route (which must stay last)
+        self._starlette.routes.insert(
+            len(self._starlette.routes) - 1,
+            Mount(path, app=StaticFiles(directory=abs_dir), name="static"),
+        )
+
+    def set_error_page(self, status_code: int, renderer: Callable[[], Any]) -> Callable[[], Any]:
+        """Register a Pyra page function as the handler for an HTTP error code.
+
+        Example::
+
+            @app.set_error_page(404)  # use as decorator
+            def not_found():
+                return VStack(Heading("404"), Text("Page not found."), Link("Home", href="/"))
+        """
+        self._error_pages[status_code] = renderer
+        return renderer  # allow use as decorator
+
+    async def _handle_500(self, request: Any, exc: Exception) -> HTMLResponse:
+        if 500 in self._error_pages:
+            try:
+                ssr_html = _render_ssr(self._error_pages[500])
+                body = _INDEX_HTML.replace(
+                    '<div id="pyra-root"><div style="opacity:0.5">Connecting...</div></div>',
+                    f'<div id="pyra-root">{ssr_html}</div>',
+                )
+                return HTMLResponse(body, status_code=500)
+            except Exception:
+                pass
+        return HTMLResponse(_500_HTML, status_code=500)
 
     def use_auth(self, auth_manager: Any) -> None:
         """Register auth routes and attach auth_manager to this App instance."""
@@ -335,6 +406,21 @@ class App:
                 f'<div id="pyra-root">{ssr_html}</div>',
             )
             return HTMLResponse(body)
+
+        if renderer is None:
+            # Custom 404 page
+            if 404 in self._error_pages:
+                try:
+                    ssr_html = _render_ssr(self._error_pages[404])
+                    body = _INDEX_HTML.replace(
+                        '<div id="pyra-root"><div style="opacity:0.5">Connecting...</div></div>',
+                        f'<div id="pyra-root">{ssr_html}</div>',
+                    )
+                    return HTMLResponse(body, status_code=404)
+                except Exception:
+                    pass
+            return HTMLResponse(_404_HTML, status_code=404)
+
         return HTMLResponse(_INDEX_HTML)
 
     async def _runtime(self, request: Any) -> HTMLResponse:
