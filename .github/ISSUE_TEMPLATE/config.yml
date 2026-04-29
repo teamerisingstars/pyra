@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / Discussion
+    url: https://github.com/pyra-dev/pyra/discussions
+    about: Ask a question or start a discussion (when this exists)
+  - name: Security vulnerability
+    url: https://github.com/pyra-dev/pyra/security/advisories/new
+    about: Privately report a vulnerability (do NOT use public issues)

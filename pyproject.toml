@@ -1,0 +1,36 @@
+[project]
+name = "pyra"
+version = "0.0.1"
+description = "Python-first, AI-native, security-first full-stack framework"
+authors = [{name = "Pyra contributors"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "starlette>=0.37",
+    "uvicorn[standard]>=0.30",
+    "websockets>=12",
+    "pydantic>=2.7",
+    "cryptography>=42",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+pyra = "pyra.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyra"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
