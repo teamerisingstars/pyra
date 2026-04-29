@@ -1,8 +1,6 @@
 """Tests for UI components: Badge, Card, Image, Heading, Link, Spinner, and Element.key."""
 from __future__ import annotations
 
-import pytest
-
 from pyra.components import Badge, Card, Element, Heading, Image, Link, Spinner, FormField, Select, Checkbox
 
 

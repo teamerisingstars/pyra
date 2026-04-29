@@ -73,7 +73,7 @@ def test_require_auth_passes_when_authenticated(auth):
 
     token = _set_current_user("user1")
     try:
-        result = my_page()
+        my_page()
         assert called == [True]
     finally:
         from pyra.auth import _SESSION_CTX
