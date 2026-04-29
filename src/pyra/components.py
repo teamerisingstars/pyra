@@ -256,3 +256,48 @@ def Checkbox(
         props={"style": "display:flex;align-items:center;gap:8px;"},
         children=[input_el, label_el],
     )
+
+
+def LoadingButton(
+    label: Any,
+    on_click: Optional[Callable[..., Any]] = None,
+    loading: bool = False,
+    loading_label: Any = "Loading…",
+    disabled: bool = False,
+) -> Element:
+    is_disabled = loading or disabled
+    display_label = loading_label if loading else label
+    props: dict[str, Any] = {}
+    if is_disabled:
+        props["disabled"] = "true"
+    if loading:
+        props["style"] = "opacity:0.6;cursor:not-allowed;"
+    handlers = {"click": on_click} if on_click and not is_disabled else {}
+    return Element(tag="button", props=props, children=[str(display_label)], handlers=handlers)
+
+
+def FileInput(
+    name: str = "file",
+    accept: str = "*/*",
+    label: str = "Choose file",
+    on_upload: Optional[Callable[..., Any]] = None,
+    multiple: bool = False,
+) -> Element:
+    """File upload input.
+
+    When the user selects a file, it is POSTed to /__pyra__/upload.
+    The server stores the file temporarily and fires the on_upload handler
+    with {"filename": "...", "size": N, "content_type": "...", "upload_id": "..."}.
+    """
+    props: dict[str, Any] = {
+        "type": "file",
+        "name": name,
+        "accept": accept,
+        "data-upload-target": "/__pyra__/upload",
+    }
+    if multiple:
+        props["multiple"] = "true"
+    if label:
+        props["aria-label"] = label
+    handlers = {"change": on_upload} if on_upload else {}
+    return Element(tag="input", props=props, handlers=handlers)
