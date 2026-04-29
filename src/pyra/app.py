@@ -36,7 +36,7 @@ from pyra.render import render_tree
 from pyra.state import SessionState, _pop_session, _push_session
 from pyra.transport import Session, new_session, sign_outbound
 
-# Global page registry. v0.0.1 supports a single root path.
+# Global page registry. Supports multiple registered paths.
 _PAGES: dict[str, Callable[[], Component]] = {}
 
 
@@ -61,6 +61,9 @@ _INDEX_HTML = """<!doctype html>
     button { padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
     button:hover { background: #f0f0f0; }
     input { padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid #ccc; font-size: 1rem; }
+    @keyframes pyra-spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -173,6 +176,19 @@ _RUNTIME_JS = r"""
           const fresh = buildNode(op.node);
           old.replaceWith(fresh);
         }
+      } else if (op.op === "insert_node") {
+        const parent = idMap.get(op.parent_id);
+        if (parent) {
+          const newNode = buildNode(op.node);
+          const ref = parent.childNodes[op.index] || null;
+          parent.insertBefore(newNode, ref);
+        }
+      } else if (op.op === "remove_node") {
+        const el = idMap.get(op.id);
+        if (el) {
+          unindexSubtree(el);
+          el.parentNode && el.parentNode.removeChild(el);
+        }
       }
     }
   }
@@ -186,7 +202,7 @@ _RUNTIME_JS = r"""
     }));
   }
 
-  ws.addEventListener("open", () => { send({type: "hello"}); });
+  ws.addEventListener("open", () => { send({type: "hello", path: window.location.pathname}); });
 
   ws.addEventListener("message", (evt) => {
     let msg;
@@ -213,6 +229,7 @@ class _Connection:
     render_effect: Effect | None = None
     last_tree: dict[str, Any] | None = None
     session_state: SessionState = field(default_factory=SessionState)
+    path: str = "/"
 
 
 class App:
@@ -223,6 +240,9 @@ class App:
                 Route("/", self._index, methods=["GET"]),
                 Route("/__pyra__/runtime.js", self._runtime, methods=["GET"]),
                 WebSocketRoute("/__pyra__/ws", self._ws_endpoint),
+                # Catch-all route: serve index HTML for any registered path
+                # (must come after more specific /__pyra__/* routes)
+                Route("/{path:path}", self._index, methods=["GET"]),
             ],
         )
 
@@ -240,35 +260,12 @@ class App:
         session = new_session()
         conn = _Connection(websocket=websocket, session=session)
 
-        renderer = _PAGES.get("/")
-        if renderer is None:
-            await self._send(conn, {"type": "error", "message": "no page at /"})
-            await websocket.close()
-            return
-
         loop = asyncio.get_running_loop()
         send_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        def do_render() -> None:
-            render_module.reset_id_counter()
-            conn.session_state.begin_render()
-            token = _push_session(conn.session_state)
-            try:
-                new_tree = render_tree(renderer(), conn.handler_registry)
-            finally:
-                _pop_session(token)
-            ops = diff(conn.last_tree, new_tree)
-            conn.last_tree = new_tree
-            if not ops:
-                return
-            try:
-                loop.call_soon_threadsafe(
-                    send_queue.put_nowait, {"type": "patch", "ops": ops}
-                )
-            except RuntimeError:
-                pass
-
-        conn.render_effect = Effect(do_render)
+        # Store send_queue and loop on conn so _handle_inbound can use them
+        conn._send_queue = send_queue  # type: ignore[attr-defined]
+        conn._loop = loop  # type: ignore[attr-defined]
 
         async def sender() -> None:
             while True:
@@ -291,7 +288,9 @@ class App:
                 session.last_inbound_msg_id = inbound_id
 
                 payload = message.get("payload") or {}
-                await self._handle_inbound(conn, payload)
+                should_close = await self._handle_inbound(conn, payload)
+                if should_close:
+                    break
         except WebSocketDisconnect:
             pass
         finally:
@@ -306,16 +305,49 @@ class App:
         except Exception:
             pass
 
-    async def _handle_inbound(self, conn: _Connection, payload: dict[str, Any]) -> None:
+    async def _handle_inbound(self, conn: _Connection, payload: dict[str, Any]) -> bool:
+        """Handle an inbound message. Returns True if the connection should be closed."""
         ptype = payload.get("type")
         if ptype == "hello":
-            return
+            path = payload.get("path", "/")
+            conn.path = path
+            renderer = _PAGES.get(path)
+            if renderer is None:
+                await self._send(conn, {"type": "error", "message": f"no page at {path}"})
+                await conn.websocket.close()
+                return True
+
+            loop = conn._loop  # type: ignore[attr-defined]
+            send_queue = conn._send_queue  # type: ignore[attr-defined]
+
+            def do_render() -> None:
+                render_module.reset_id_counter()
+                conn.session_state.begin_render()
+                token = _push_session(conn.session_state)
+                try:
+                    new_tree = render_tree(renderer(), conn.handler_registry)
+                finally:
+                    _pop_session(token)
+                ops = diff(conn.last_tree, new_tree)
+                conn.last_tree = new_tree
+                if not ops:
+                    return
+                try:
+                    loop.call_soon_threadsafe(
+                        send_queue.put_nowait, {"type": "patch", "ops": ops}
+                    )
+                except RuntimeError:
+                    pass
+
+            conn.render_effect = Effect(do_render)
+            return False
+
         if ptype == "event":
             hid = payload.get("handler_id")
             data = payload.get("data") or {}
             handler = conn.handler_registry.get(hid)
             if handler is None:
-                return
+                return False
             try:
                 if _accepts_arg(handler):
                     result = handler(data)
@@ -326,9 +358,45 @@ class App:
             except Exception as e:
                 print(f"[pyra] handler {hid} raised: {e}")
 
-    def run(self, host: str = "127.0.0.1", port: int = 7340) -> None:
+        return False
+
+    def run(self, host: str = "127.0.0.1", port: int = 7340, reload: bool = False) -> None:
+        """Start the Pyra application server.
+
+        Args:
+            host: The host address to bind to.
+            port: The port to listen on.
+            reload: Enable hot-reload via uvicorn's built-in reload mode.
+                When reload=True, the app variable must be importable from __main__.
+                Example usage::
+
+                    app = App()
+                    if __name__ == "__main__":
+                        app.run(reload=True)
+        """
         import uvicorn
-        uvicorn.run(self._starlette, host=host, port=port, log_level="info")
+        if reload:
+            import sys
+            main_module = sys.modules.get("__main__")
+            app_var = None
+            if main_module:
+                for name, val in vars(main_module).items():
+                    if val is self:
+                        app_var = name
+                        break
+            if app_var:
+                uvicorn.run(
+                    f"__main__:{app_var}._starlette",
+                    host=host,
+                    port=port,
+                    reload=True,
+                    log_level="info",
+                )
+            else:
+                print("[pyra] reload=True requires app to be importable. Falling back to non-reload mode.")
+                uvicorn.run(self._starlette, host=host, port=port, log_level="info")
+        else:
+            uvicorn.run(self._starlette, host=host, port=port, log_level="info")
 
 
 def _accepts_arg(fn: Callable[..., Any]) -> bool:
