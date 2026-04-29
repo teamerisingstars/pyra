@@ -221,6 +221,23 @@ _RUNTIME_JS = r"""
 """
 
 
+def _render_ssr(renderer: Callable[[], Any]) -> str:
+    """Render a page function to an HTML string for SSR. Never raises — caller handles exceptions."""
+    from pyra.ssr import render_to_html
+    from pyra.state import SessionState, _pop_session, _push_session
+
+    render_module.reset_id_counter()
+    ss = SessionState()
+    ss.begin_render()
+    token = _push_session(ss)
+    try:
+        tree = render_tree(renderer(), {})
+    finally:
+        _pop_session(token)
+        render_module.reset_id_counter()
+    return render_to_html(tree)
+
+
 @dataclass
 class _Connection:
     websocket: WebSocket
@@ -247,6 +264,30 @@ class App:
         )
 
     async def _index(self, request: Any) -> HTMLResponse:
+        # Determine path — handle both "/" and "/{path:path}" routes
+        path = request.path_params.get("path", "")
+        if not path:
+            path = request.url.path
+        if not path.startswith("/"):
+            path = "/" + path
+        if path == "":
+            path = "/"
+
+        renderer = _PAGES.get(path)
+        if renderer is not None:
+            try:
+                ssr_html = _render_ssr(renderer)
+            except Exception:
+                ssr_html = None
+        else:
+            ssr_html = None
+
+        if ssr_html:
+            body = _INDEX_HTML.replace(
+                '<div id="pyra-root"><div style="opacity:0.5">Connecting...</div></div>',
+                f'<div id="pyra-root">{ssr_html}</div>',
+            )
+            return HTMLResponse(body)
         return HTMLResponse(_INDEX_HTML)
 
     async def _runtime(self, request: Any) -> HTMLResponse:
