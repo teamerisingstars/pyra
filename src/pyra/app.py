@@ -212,6 +212,9 @@ _RUNTIME_JS = r"""
     const p = msg.payload;
     if (!p || typeof p !== "object") return;
     if (p.type === "patch" && Array.isArray(p.ops)) applyOps(p.ops);
+    else if (p.type === "redirect" && typeof p.url === "string") {
+      window.location.href = p.url;
+    }
   });
 
   ws.addEventListener("close", () => {
@@ -247,10 +250,12 @@ class _Connection:
     last_tree: dict[str, Any] | None = None
     session_state: SessionState = field(default_factory=SessionState)
     path: str = "/"
+    _user_token: Any = None
 
 
 class App:
     def __init__(self) -> None:
+        self._auth: Any = None
         self._starlette = Starlette(
             debug=True,
             routes=[
@@ -263,6 +268,36 @@ class App:
             ],
         )
 
+    def use_auth(self, auth_manager: Any) -> None:
+        """Register auth routes and attach auth_manager to this App instance."""
+        from pyra.auth import AuthManager
+        if not isinstance(auth_manager, AuthManager):
+            raise TypeError("auth_manager must be an AuthManager instance")
+        self._auth = auth_manager
+        # Register verify endpoint — must rebuild starlette routes
+        from starlette.requests import Request
+        from starlette.responses import RedirectResponse, HTMLResponse as _HTML
+
+        async def verify(request: Request) -> Any:
+            token = request.query_params.get("token", "")
+            next_url = request.query_params.get("next", "/")
+            user_id = auth_manager.verify_magic_link_token(token)
+            if user_id is None:
+                return _HTML("<h1>Invalid or expired link.</h1>", status_code=400)
+            session_value = auth_manager.create_session_value(user_id)
+            response = RedirectResponse(next_url, status_code=303)
+            response.set_cookie(
+                key=auth_manager.cookie_name,
+                value=session_value,
+                httponly=True,
+                samesite="lax",
+                max_age=auth_manager._session_ttl,
+            )
+            return response
+
+        from starlette.routing import Route as _Route
+        self._starlette.routes.insert(0, _Route("/auth/verify", verify, methods=["GET"]))
+
     async def _index(self, request: Any) -> HTMLResponse:
         # Determine path — handle both "/" and "/{path:path}" routes
         path = request.path_params.get("path", "")
@@ -274,6 +309,18 @@ class App:
             path = "/"
 
         renderer = _PAGES.get(path)
+
+        # Auth check for protected pages (HTTP layer — before WebSocket)
+        if renderer is not None and self._auth is not None:
+            requires = getattr(renderer, "_requires_auth", False)
+            if requires:
+                cookie_val = request.cookies.get(self._auth.cookie_name, "")
+                user_id = self._auth.verify_session_value(cookie_val) if cookie_val else None
+                if user_id is None:
+                    redirect_to = getattr(renderer, "_redirect_to", self._auth.login_path)
+                    from starlette.responses import RedirectResponse
+                    return RedirectResponse(redirect_to, status_code=303)
+
         if renderer is not None:
             try:
                 ssr_html = _render_ssr(renderer)
@@ -338,6 +385,9 @@ class App:
             sender_task.cancel()
             if conn.render_effect:
                 conn.render_effect.dispose()
+            if conn._user_token is not None:
+                from pyra.auth import _SESSION_CTX
+                _SESSION_CTX.reset(conn._user_token)
 
     async def _send(self, conn: _Connection, payload: dict[str, Any]) -> None:
         signed = sign_outbound(conn.session, payload)
@@ -361,12 +411,33 @@ class App:
             loop = conn._loop  # type: ignore[attr-defined]
             send_queue = conn._send_queue  # type: ignore[attr-defined]
 
+            # Set session context from cookie
+            if self._auth is not None:
+                import http.cookies
+                cookie_jar = http.cookies.SimpleCookie()
+                cookie_jar.load(conn.websocket.headers.get("cookie", ""))
+                cookie_val = cookie_jar.get(self._auth.cookie_name)
+                user_id = self._auth.verify_session_value(cookie_val.value) if cookie_val else None
+            else:
+                user_id = None
+
+            from pyra.auth import _set_current_user
+            conn._user_token = _set_current_user(user_id)
+
             def do_render() -> None:
                 render_module.reset_id_counter()
                 conn.session_state.begin_render()
                 token = _push_session(conn.session_state)
                 try:
-                    new_tree = render_tree(renderer(), conn.handler_registry)
+                    from pyra.auth import _AuthRedirectComponent
+                    result = renderer()
+                    if isinstance(result, _AuthRedirectComponent):
+                        loop.call_soon_threadsafe(
+                            send_queue.put_nowait,
+                            {"type": "redirect", "url": result.url}
+                        )
+                        return
+                    new_tree = render_tree(result, conn.handler_registry)
                 finally:
                     _pop_session(token)
                 ops = diff(conn.last_tree, new_tree)
