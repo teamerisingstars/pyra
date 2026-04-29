@@ -145,3 +145,114 @@ def Spinner(size: str = "24px", color: str = "#888") -> Element:
         f"animation:pyra-spin 0.8s linear infinite;"
     )
     return Element(tag="div", props={"class": "pyra-spinner", "style": style})
+
+
+def FormField(
+    name: str,
+    label: str = "",
+    value: Any = "",
+    on_input: Optional[Callable[[str], Any]] = None,
+    placeholder: str = "",
+    error: str = "",
+    input_type: str = "text",
+) -> Element:
+    """A labeled input row with an optional error message below."""
+    label_el = Element(
+        tag="label",
+        props={"style": "font-size:0.875rem;font-weight:500;color:#374151;"},
+        children=[label] if label else [],
+    )
+    input_el = Element(
+        tag="input",
+        props={
+            "type": input_type,
+            "name": name,
+            "value": str(value),
+            "placeholder": placeholder,
+            "style": (
+                "padding:0.4rem 0.6rem;border-radius:6px;"
+                "border:1px solid #d1d5db;font-size:1rem;width:100%;"
+                + ("border-color:#ef4444;" if error else "")
+            ),
+        },
+        handlers={"input": on_input} if on_input else {},
+    )
+    children: list[ChildLike] = [label_el, input_el]
+    if error:
+        children.append(
+            Element(
+                tag="span",
+                props={"style": "font-size:0.75rem;color:#ef4444;"},
+                children=[error],
+            )
+        )
+    return Element(
+        tag="div",
+        props={"style": "display:flex;flex-direction:column;gap:4px;"},
+        children=children,
+    )
+
+
+def Select(
+    name: str,
+    options: list[tuple[str, str]],
+    value: str = "",
+    label: str = "",
+    on_change: Optional[Callable[[str], Any]] = None,
+) -> Element:
+    """A labeled select/dropdown element."""
+    label_el = Element(
+        tag="label",
+        props={"style": "font-size:0.875rem;font-weight:500;color:#374151;"},
+        children=[label] if label else [],
+    )
+    option_els = [
+        Element(
+            tag="option",
+            props={"value": v, **({"selected": "true"} if v == value else {})},
+            children=[lbl],
+        )
+        for v, lbl in options
+    ]
+    select_el = Element(
+        tag="select",
+        props={
+            "name": name,
+            "style": "padding:0.4rem 0.6rem;border-radius:6px;border:1px solid #d1d5db;font-size:1rem;",
+        },
+        handlers={"change": on_change} if on_change else {},
+        children=option_els,
+    )
+    children: list[ChildLike] = [label_el, select_el] if label else [select_el]
+    return Element(
+        tag="div",
+        props={"style": "display:flex;flex-direction:column;gap:4px;"},
+        children=children,
+    )
+
+
+def Checkbox(
+    name: str,
+    label: str = "",
+    checked: bool = False,
+    on_change: Optional[Callable[[str], Any]] = None,
+) -> Element:
+    """A checkbox with an optional label."""
+    props: dict[str, Any] = {"type": "checkbox", "name": name}
+    if checked:
+        props["checked"] = "true"
+    input_el = Element(
+        tag="input",
+        props=props,
+        handlers={"change": on_change} if on_change else {},
+    )
+    label_el = Element(
+        tag="label",
+        props={"style": "font-size:0.875rem;color:#374151;"},
+        children=[label] if label else [],
+    )
+    return Element(
+        tag="div",
+        props={"style": "display:flex;align-items:center;gap:8px;"},
+        children=[input_el, label_el],
+    )

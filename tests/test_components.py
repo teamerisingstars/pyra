@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from pyra.components import Badge, Card, Element, Heading, Image, Link, Spinner
+from pyra.components import Badge, Card, Element, Heading, Image, Link, Spinner, FormField, Select, Checkbox
 
 
 # ---------------------------------------------------------------------------
@@ -239,3 +239,72 @@ def test_element_key_not_in_props() -> None:
     """key must never bleed into props — it is reconciler metadata only."""
     e = Element(tag="div", key="k")
     assert "key" not in e.props
+
+
+# ---------------------------------------------------------------------------
+# FormField
+# ---------------------------------------------------------------------------
+
+def test_form_field_tag():
+    assert FormField("email").tag == "div"
+
+
+def test_form_field_has_input_child():
+    ff = FormField("email", value="x")
+    inputs = [c for c in ff.children if isinstance(c, Element) and c.tag == "input"]
+    assert len(inputs) == 1
+    assert inputs[0].props["value"] == "x"
+
+
+def test_form_field_error_adds_span():
+    ff = FormField("email", error="required")
+    spans = [c for c in ff.children if isinstance(c, Element) and c.tag == "span"]
+    assert any("required" in c.children for c in spans)
+
+
+def test_form_field_no_error_no_span():
+    ff = FormField("email")
+    spans = [c for c in ff.children if isinstance(c, Element) and c.tag == "span"]
+    assert len(spans) == 0
+
+
+# ---------------------------------------------------------------------------
+# Select
+# ---------------------------------------------------------------------------
+
+def test_select_returns_div():
+    s = Select("color", [("r", "Red"), ("b", "Blue")])
+    assert s.tag == "div"
+
+
+def test_select_options_count():
+    s = Select("color", [("r", "Red"), ("b", "Blue"), ("g", "Green")])
+    selects = [c for c in s.children if isinstance(c, Element) and c.tag == "select"]
+    assert len(selects[0].children) == 3
+
+
+def test_select_marks_selected_value():
+    s = Select("color", [("r", "Red"), ("b", "Blue")], value="b")
+    sel_el = next(c for c in s.children if isinstance(c, Element) and c.tag == "select")
+    opt_b = next(o for o in sel_el.children if o.props.get("value") == "b")
+    assert opt_b.props.get("selected") == "true"
+
+
+# ---------------------------------------------------------------------------
+# Checkbox
+# ---------------------------------------------------------------------------
+
+def test_checkbox_tag():
+    assert Checkbox("agree").tag == "div"
+
+
+def test_checkbox_checked_prop():
+    cb = Checkbox("agree", checked=True)
+    inp = next(c for c in cb.children if isinstance(c, Element) and c.tag == "input")
+    assert inp.props.get("checked") == "true"
+
+
+def test_checkbox_unchecked_no_prop():
+    cb = Checkbox("agree", checked=False)
+    inp = next(c for c in cb.children if isinstance(c, Element) and c.tag == "input")
+    assert "checked" not in inp.props
