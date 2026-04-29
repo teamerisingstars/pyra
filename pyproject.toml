@@ -12,6 +12,7 @@ dependencies = [
     "websockets>=12",
     "pydantic>=2.7",
     "cryptography>=42",
+    "python-multipart>=0.0.7",
 ]
 
 [project.optional-dependencies]
