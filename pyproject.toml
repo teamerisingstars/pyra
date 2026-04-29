@@ -1,6 +1,6 @@
 [project]
 name = "pyra"
-version = "0.0.1"
+version = "0.0.3"
 description = "Python-first, AI-native, security-first full-stack framework"
 authors = [{name = "Pyra contributors"}]
 license = {text = "MIT"}

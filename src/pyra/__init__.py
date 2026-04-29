@@ -35,7 +35,7 @@ from pyra.auth import AuthManager, get_current_user
 from pyra.config import config, Config
 from pyra.db import PersistentState, get_connection
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 __all__ = [
     "Signal",
