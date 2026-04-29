@@ -98,6 +98,16 @@ class AuthManager:
     def _sign(self, data: str) -> str:
         return hmac.new(self._secret, data.encode(), hashlib.sha256).hexdigest()
 
+    # --- RBAC integration ---
+
+    @property
+    def roles(self) -> Any:  # RoleManager, imported lazily to avoid circular
+        """Lazily-created RoleManager attached to this AuthManager."""
+        if not hasattr(self, "_roles"):
+            from pyra.rbac import RoleManager
+            self._roles: Any = RoleManager()
+        return self._roles
+
     # --- Route protection ---
 
     def require_auth(

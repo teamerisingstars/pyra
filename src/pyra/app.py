@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os as _os
+import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -38,6 +40,10 @@ from pyra.transport import Session, new_session, sign_outbound
 
 # Global page registry. Supports multiple registered paths.
 _PAGES: dict[str, Callable[[], Component]] = {}
+
+_UPLOAD_DIR = _os.path.join(tempfile.gettempdir(), "pyra_uploads")
+_os.makedirs(_UPLOAD_DIR, exist_ok=True)
+_UPLOADS: dict[str, dict[str, Any]] = {}  # upload_id -> metadata
 
 
 def page(path: str) -> Callable[[Callable[[], Component]], Callable[[], Component]]:
@@ -282,6 +288,7 @@ class App:
                 Route("/", self._index, methods=["GET"]),
                 Route("/__pyra__/runtime.js", self._runtime, methods=["GET"]),
                 WebSocketRoute("/__pyra__/ws", self._ws_endpoint),
+                Route("/__pyra__/upload", self._upload, methods=["POST"]),
                 # Catch-all route: serve index HTML for any registered path
                 # (must come after more specific /__pyra__/* routes)
                 Route("/{path:path}", self._index, methods=["GET"]),
@@ -558,6 +565,38 @@ class App:
 
         return False
 
+    async def _upload(self, request: Any) -> Any:
+        """Handle multipart file upload. Returns JSON with upload metadata."""
+        import secrets as _sec
+        from starlette.responses import JSONResponse
+        try:
+            form = await request.form()
+            upload_file = next(
+                (v for v in form.values() if hasattr(v, "filename")), None
+            )
+            if upload_file is None:
+                return JSONResponse({"error": "no file in request"}, status_code=400)
+
+            upload_id = _sec.token_hex(16)
+            filename = upload_file.filename or "upload"
+            content = await upload_file.read()
+            dest = _os.path.join(_UPLOAD_DIR, upload_id)
+            with open(dest, "wb") as f:
+                f.write(content)
+
+            meta = {
+                "upload_id": upload_id,
+                "filename": filename,
+                "size": len(content),
+                "content_type": upload_file.content_type or "application/octet-stream",
+                "path": dest,
+            }
+            _UPLOADS[upload_id] = meta
+            # Return safe metadata (no filesystem path to client)
+            return JSONResponse({k: v for k, v in meta.items() if k != "path"})
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, status_code=500)
+
     def run(self, host: str | None = None, port: int | None = None, reload: bool = False) -> None:
         """Start the Pyra application server.
 
@@ -611,3 +650,8 @@ def _accepts_arg(fn: Callable[..., Any]) -> bool:
         return False
     except (ValueError, Exception):
         return False
+
+
+def get_upload(upload_id: str) -> dict[str, Any] | None:
+    """Retrieve upload metadata and file path by upload_id. Returns None if not found."""
+    return _UPLOADS.get(upload_id)
